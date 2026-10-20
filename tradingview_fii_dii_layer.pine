@@ -1,0 +1,42 @@
+// ============================================================
+// FII/DII BRIDGE INPUT LAYER
+// IMPORTANT: Pine cannot directly fetch arbitrary NSE JSON.
+// Replace these bridge inputs with request.seed() only when you
+// have an active Pine Seeds data source.
+// ============================================================
+
+groupBridge = "FII/DII BRIDGE"
+
+bridgeEnabled = input.bool(true, "Use FII/DII Bridge", group=groupBridge)
+
+// Temporary safe fallback until a supported TradingView data feed
+// is connected. The bridge itself updates data/latest.json daily.
+bridgeFiiNet = input.float(0.0, "Bridge FII Net (₹ Cr)", group=groupBridge)
+bridgeDiiNet = input.float(0.0, "Bridge DII Net (₹ Cr)", group=groupBridge)
+
+bridgeFiiScore =
+     bridgeFiiNet >= 5000 ? 3 :
+     bridgeFiiNet >= 2000 ? 2 :
+     bridgeFiiNet >= 500 ? 1 :
+     bridgeFiiNet > -500 ? 0 :
+     bridgeFiiNet > -2000 ? -1 :
+     bridgeFiiNet > -5000 ? -2 : -3
+
+bridgeDiiScore =
+     bridgeDiiNet >= 5000 ? 3 :
+     bridgeDiiNet >= 2000 ? 2 :
+     bridgeDiiNet >= 500 ? 1 :
+     bridgeDiiNet > -500 ? 0 :
+     bridgeDiiNet > -2000 ? -1 :
+     bridgeDiiNet > -5000 ? -2 : -3
+
+bridgeInstitutionalPressure = bridgeEnabled ? (bridgeFiiScore * 2 + bridgeDiiScore * 2) : 0
+
+bridgeOverview =
+     bridgeFiiNet >= 2000 and bridgeDiiNet >= 2000 ? "STRONG INSTITUTIONAL SUPPORT" :
+     bridgeFiiNet <= -5000 and bridgeDiiNet <= -500 ? "STRONG INSTITUTIONAL PRESSURE" :
+     bridgeFiiNet <= -500 and bridgeDiiNet >= 2000 ? "DII SUPPORT / FII SELLING" :
+     bridgeFiiNet >= 2000 and bridgeDiiNet <= -500 ? "FII SUPPORT / DII SELLING" :
+     bridgeFiiNet + bridgeDiiNet >= 2000 ? "MILD INSTITUTIONAL SUPPORT" :
+     bridgeFiiNet + bridgeDiiNet <= -2000 ? "MILD INSTITUTIONAL PRESSURE" :
+     "MIXED / NEUTRAL"
