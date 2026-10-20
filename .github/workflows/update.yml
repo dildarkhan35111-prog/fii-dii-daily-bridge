@@ -1,0 +1,153 @@
+name: Update FII DII Daily Data
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 12 * * 1-5"
+
+permissions:
+  contents: write
+
+jobs:
+  update-fii-dii:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Fetch NSE FII DII data
+        run: |
+          python - <<'PY'
+          import requests
+          import json
+          from datetime import datetime, timezone, timedelta
+
+          url = "https://www.nseindia.com/api/fiidiiTradeData"
+
+          session = requests.Session()
+
+          headers = {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/155.0 Safari/537.36",
+              "Accept": "application/json,text/plain,*/*",
+              "Accept-Language": "en-US,en;q=0.9",
+              "Referer": "https://www.nseindia.com/reports/fii-dii",
+              "Connection": "keep-alive"
+          }
+
+          # First open NSE website to obtain cookies
+          home = session.get(
+              "https://www.nseindia.com",
+              headers=headers,
+              timeout=30
+          )
+
+          if home.status_code != 200:
+              raise Exception(
+                  f"NSE home page failed: HTTP {home.status_code}"
+              )
+
+          response = session.get(
+              url,
+              headers=headers,
+              timeout=30
+          )
+
+          if response.status_code != 200:
+              raise Exception(
+                  f"NSE FII/DII API failed: HTTP {response.status_code}"
+              )
+
+          try:
+              raw = response.json()
+          except Exception:
+              raise Exception(
+                  "NSE response JSON nahi hai."
+              )
+
+          ist = timezone(timedelta(hours=5, minutes=30))
+          now_ist = datetime.now(ist)
+
+          output = {
+              "source": "NSE India",
+              "updated_at_ist": now_ist.isoformat(),
+              "status": "OK",
+              "raw": raw
+          }
+
+          # Try to identify FII/DII rows
+          rows = []
+
+          if isinstance(raw, list):
+              rows = raw
+
+          elif isinstance(raw, dict):
+              for key in ["data", "rows", "records", "result"]:
+                  value = raw.get(key)
+                  if isinstance(value, list):
+                      rows = value
+                      break
+
+          fii = None
+          dii = None
+
+          for row in rows:
+              if not isinstance(row, dict):
+                  continue
+
+              text = " ".join(
+                  str(v).lower()
+                  for v in row.values()
+                  if v is not None
+              )
+
+              if "fii" in text or "fpi" in text:
+                  fii = row
+
+              if "dii" in text:
+                  dii = row
+
+          output["fii"] = fii
+          output["dii"] = dii
+
+          # Save complete NSE response also, so nothing is lost
+          with open(
+              "data_latest.json",
+              "w",
+              encoding="utf-8"
+          ) as f:
+              json.dump(
+                  output,
+                  f,
+                  ensure_ascii=False,
+                  indent=2
+              )
+
+          print("====================================")
+          print("FII/DII UPDATE SUCCESS")
+          print("IST:", now_ist)
+          print("FII:", fii)
+          print("DII:", dii)
+          print("====================================")
+          PY
+
+      - name: Commit updated data
+        run: |
+          git config user.name "FII DII Daily Bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add data_latest.json
+
+          git diff --cached --quiet || git commit -m "Daily FII DII update"
+
+          git push
